@@ -124,19 +124,64 @@ To be able to address this monitoring needs, we will approach a bottom-up strate
 kubectl port-forward -n monitoring prometheus-monitoring-prometheus-oper-prometheus-0 9090
 ```
 
-Accesing http://localhost:9090/graph we can find the front-end of Prometheus with a list of all the metrics availables: 
+Accessing http://localhost:9090/graph we can find the front-end of Prometheus with a list of all the metrics available.
+
+First of all, Sam is interested in the general health of the node. There are some parameters that are important in every system, such as CPU usage, free memory, disk space, network activity... To be able to get these metrics from our nodes there is one of the exporters installed by the Prometheus Operator that can help us: the Node Exporter. This exporter gathers general system information and makes it available for Prometheus. Getting to the Prometheus front-end, we will find in the drop down menu these metrics starting by 'node_':
 
 ![Prometheus metrics](resources/prometheus-metrics.png "List of Metrics in the front-end of Prometheus")
 
-// Explain access to metrics, graphs and a little of promQL
+Some of the metrics that we will use for monitoring the node will be: 
+* node_cpu_seconds_total: For CPU usage
+* node_memory_MemAvailable_bytes: For memory usage
+* node_filesystem_avail_bytes: For disk space usage
+* node_network_receive_bytes_total and node_network_transmit_bytes_total: For network activity
 
 
-// Node monitoring - node exporter
-// cpu, mem, network
-// cluster and pods monitoring
-// Active Pods, restarts
-// Service monitoring
-// golden metrics
+Let's explore in the 'Graph' panel one of the selected metrics. For example, let's try to visualize the CPU utilization. In the drop down menu we will find the 'node_cpu_seconds_total' metric, select it and click 'Execute'. A graphic with many lines will appear and a text box with lots of data under it. 
+
+We can see that in the graph, none of the lines goes ever down. This is because this kind of data is called a 'counter' in Prometheus, and they are always increasing their value. Other kind of data, like 'gauge', can go up and down. 
+
+In the text just below the graphs we can find some interesting information about this metric: 
+
+![Prometheus node exporter CPU metric](resources/cpu-metric-detail.png "Detail of the node exporter CPU metric")
+
+As we can see, a metric can be defined by different values tagged as labels. In this case, we can see that the instance can give information about the seconds of each of the CPUs of the node (with the 'cpu' label) spent in different 'modes' ('idle', 'system', 'nice', 'iowait'..). 
+
+Let's first try to see the time used by each CPU. But to do this, we would have to subtract one value from the next one and divide it for the integration time in order to calculate the seconds per seconds used... But don't worry, because Sam just found out that the Prometheus query language (promQL) makes it all by himself. WE just have to write in the text box the following query to have the same graph, but with an integration interval of 5 minutes: 
+
+```
+rate(node_cpu_seconds_total[5m])
+```
+
+But we can go further and sum all the lines with the same CPU and have the time spent for each CPU:
+
+```
+sum by (cpu) (rate(node_cpu_seconds_total[5m]))
+```
+
+But Sam knows that the CPUs are always up, so, the values will be always 1... unless we filter all the labels different from 'idle':
+
+```
+sum by (cpu) (rate(node_cpu_seconds_total{mode != 'idle'}[5m]))
+```
+
+That is almost perfect... but we can make it a percentage of the CPU utilization just subtracting the idle time of the CPU to the total time with these queries: 
+
+```
+# CPU usage per CPU
+100 * (1 - rate(node_cpu_seconds_total{mode = 'idle'}[5m]))
+
+# CPU average usage
+avg (100 * (1 - rate(node_cpu_seconds_total{mode = 'idle'}[5m])))
+```
+
+As we can see in these examples, promQL is a powerful way to explore the data and look wor information filtering by labels, combining the metrics values and introducing formulas and making statistical operations. 
+
+There are other metrics that can give us information about the performance of the node: 
+* node_network_receive_bytes_total and node_network_transmit_bytes_total: For the throughput of the connection
+* node_network_receive_errs_total and node_network_transmit_errs_total: For networking errors
+
+But also, there are other exporters that can help to detect and identify problems not only in the host machine, but in the cluster. We can find some interesting metrics, like 'kube_pod_container_status_restarts_total'. This metric gives information of the number of restarts that has suffered a pod, that can be caused by internal malfunction of the container, making it unhealthy or problems in the quotas that makes Kubernetes to kill pods.
 
 # Visualizing the data
 It seems that with these metrics being gathered we have an amazing way to select a specific metric, visualize what is happening, and make the forensics if something bad happens. But Sam is still not calmed. She knows that at 00:01 she will not be able to sleep and she will be in the screen selecting one metric after another just to check that everything goes as expected. Still not so useful when you want to know just with a quick look if something is wrong. 
@@ -146,14 +191,21 @@ Here is when Grafana comes in the rescue. This close friend old Prometheus provi
 To access Grafana, we just have to redirect the port of the service (user: admin / pass: prom-operator): 
 
 ```
-$ kubectl port-forward $(kubectl get pods --selector=app=grafana -n monitoring --output=jsonpath="{.items..metadata.name}") -n monitoring 3000
+kubectl port-forward $(kubectl get pods --selector=app=grafana -n monitoring --output=jsonpath="{.items..metadata.name}") -n monitoring 3000
 ```
 
-// Configure selected metrics in dashboards
+Prometheus Operator has some configuration for Grafana that make available a set of ready-to-use dachboards with the most important cases of use. In this case, Sam is lucky to find a dashboard with almost all the information that she was wanting to see from the node: 
 
 ![Node dashboard](resources/node-dashboard.png "Dashboard for the node metrics")
 
-// One out of the box, another custom
+Just adding a new panel to see the total usage of the CPU would be great. All Sam has to do is to create a new dashboard copying the node one and add new panel. To correctly configure the visualization she has to choose a correct kind of panel (there are many options depending on the kind of data and usage that we need), and the promQL sentence that we used before in the Prometheus front-end interface.
+
+![Adding a new panel](resources/new-panel.png "Adding a new panel to the Grafana dashboard")
+
+After adding the new panel, the panels can be moved and arrange visually until getting the layout that she likes most.
+
+![Dashboard modified](resources/dashboard-modified.png "Dashboard for the node metrics with new panel")
+
 
 
 # Alerting when something goes wrong
