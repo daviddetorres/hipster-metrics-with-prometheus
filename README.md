@@ -57,7 +57,7 @@ helm init --service-account tiller
 helm install stable/prometheus-operator --version=8.2.4 --name=monitoring --namespace=monitoring
 ```
 
-Let's have a look at the pods and services that are created in the cluster:
+For further details on this installation, you can have a look at [this tutorial](https://medium.com/faun/trying-prometheus-operator-with-helm-minikube-b617a2dccfa3 "Installing Prometheus Operator in minikube") that Sam found. Let's have a look at the pods and services that are created in the cluster:
 
 ![Pods and services created](resources/pods-services-monitoring.png "pods and services created for monitoring")
 
@@ -204,7 +204,7 @@ After adding the new panel, the panels can be moved and arrange visually until g
 
 ![Dashboard modified](resources/dashboard-modified.png "Dashboard for the node metrics with new panel")
 
-
+Finally, Sam also creates another dashboard with panels showing the state (1 for up, 0 for down) of the diferent services of the kubernetes cluster: the Api Server, Scheduler, Admission Controller and the Etcd database. This makes her easier to see the general state of the cluster and check that they are all up and running.   
 
 # Alerting when something goes wrong
 At this point, Sam is quite better that in the beginning of the story, but now she is checking her phone every 5 minutes to see the Grafana dashboards that she just configured in the cluster, not only because she likes the well-defined fancy-colored widgets over dark background, but just to get sure that everything goes on working as it should. 
@@ -318,10 +318,29 @@ That night Prometheus fulfilled the mission for which it was created for (let th
 
 The next days she can study how was the traffic evolution during that moments and the following days in order to dimension better the cluster and the scaling of the services for future high demand situations and prepare plan for optimize the costs of the cluster resources for the CTO. 
 
-Also, she wants to get ready for the Christmas campaign and whe will talk to the development team in order to instrument the application and get metrics from the different services. The first one that she is willing to monitor is the redis database. After finding an exporter for redis, they decide to change the yaml deployment file of the database to include in the pod the container of the exporter as a sidecar and start to register data with a new ServiceMonitor.
+But there are some parameters that are missing in the metrics that she is gathering right now. She would like to know the latency of the front-end, but with the current exporters that she has there is not an easy way to do it. Also, now she is getting the network connetion errors, but not the amount of pages not being served by HTTP errors. That is why Sam implements a new service to be able to reach the por for the [built-in metrics that the Nginx ingress controller](https://docs.gitlab.com/ee/user/project/integrations/prometheus_library/nginx_ingress.html "Metrics of Nginx ingress controller for Prometheus") that she has in the cluster has already activated. Then, all she will have to do is to create a new Service Monitor resource and Prometheus will automatically start to scrap these new exporter. 
 
-Another service that will get some metrics soon is the email server. Sam's team wants to monitor the activity of this service in order to be able to detect possible missuses of it to send massive spam. 
+The aim to scrap the metrics of the ingress controller is that it can give Sam tow valuable new information. The first one is the latency, as it has metrics for the HTTP connections and the networking time serving them. Making a division of these will give her the latency, one of the [golden signals](https://sysdig.com/blog/golden-signals-kubernetes/ "Monitoring golden signals in Kubernetes"). The second important metric that will give the ingress controller will be the number of web requests labeled by the response code. This will give Sam the chance to filter the number of error and the total, creating a new metric for the error rate (again another important golden signals)
 
-The development team start to use in an regular way Prometheus in the development and testing namespaces of the cluster in order to improve response times of some services and discover some situations that were causing the sudden failure of the recommendation service as they saw that the number of created pods was increasing with no reason for scaling, along with some memory leaks in other services. 
+Eventually, the Nginx ingress controller metrics also let her gather a third golden signal: the throughput (request per second). Of course these new metrics will have their corresponding Prometheus Rules to be able to record them, a new pannel in Grafana with the network throughput, error rate and latency, and of course new alerting configuration both in the Prometheus Rule and in the Alert Manager. Following are the sentence that can be used as rules to create these new recorded metrics and use them in Grafana panels.
 
-Unexpectedly, the marketing team happen to see one of the dashboards in her screen and they are interested in talking to the development team in order to see if it is possible to create metrics of the orders and sales generated by the different campaigns that they publish, in order to study how different campaigns succeed in different hours or profiles (also, they want a fancy dashboard with graphs and gauges ready to copy-paste in their presentations and show to their friends in the phone). For this, the Prometheus clients in different languages will be used to create end points with metrics that can be directly scrapped like any other service. 
+```
+# promQL sentence for throughput
+sum(label_replace(rate(nginx_ingress_controller_requests{ingress=~".*%{ci_environment_slug}.*"}[5m]), "status_code", "${1}xx", "status", "(.)..")) by (status_code)
+
+# promQL sentence for latency
+sum(rate(nginx_ingress_controller_ingress_upstream_latency_seconds_sum{ingress=~".*%{ci_environment_slug}.*"}[5m])) / sum(rate(nginx_ingress_controller_ingress_upstream_latency_seconds_count{ingress=~".*%{ci_environment_slug}.*"}[5m])) * 1000
+
+# promQL sentence for error rate
+sum(rate(nginx_ingress_controller_requests{status=~"5.*",ingress=~".*%{ci_environment_slug}.*"}[5m])) / sum(rate(nginx_ingress_controller_requests{ingress=~".*%{ci_environment_slug}.*"}[5m])) * 100
+```
+
+Also, Sam wants to get ready for the Christmas campaign and whe will talk to the development team in order to instrument the application and get metrics from the different services. The first one that she is willing to monitor is the redis database. After finding an [exporter for Redis](https://github.com/oliver006/redis_exporter "Redis metrics exporter for Prometheus"), they decide to change the yaml deployment file of the database to [include in the pod the container of the exporter as a sidecar](https://github.com/oliver006/redis_exporter/blob/master/contrib/k8s-redis-and-exporter-deployment.yaml "Example to include the Redis exporter as sidecar in a pod") and start to register data with a new ServiceMonitor.
+
+In this server she would also want to measure golden metrics (throughput, latency and error rate) as well as other metrics such as clients connected, memory usage, the total items of each database and the up time of the service. 
+
+Another service that will get some metrics soon is the email server. In this case, more than focuse in performance, Sam's team wants to monitor the activity of this service in order to be able to detect possible missuses of it, for example, to send massive spam. To do this they'll use the [Prometheus Python client](https://github.com/prometheus/client_python "Prometheus Python client to instrument the email microservice") and gather information about the number of emails sent, the number of receivers, the number of diferent domains, the bytes sent in total and the bytes sent in attached files.
+
+The development team soon starts to use in an regular way Prometheus in the namespaces of the cluster dedicated for development and testing in order to improve response times of some services and discover some situations that were causing the sudden failure of the recommendation service as they saw that the number of created pods was increasing with no reason for scaling, along with some memory leaks in other services.
+
+Unexpectedly, the marketing team happen to see one of the dashboards in her screen and they are interested in talking to the development team in order to see if it is possible to create metrics of the orders and sales generated by the different campaigns that they publish, in order to study how different campaigns succeed in different hours or profiles (also, they want a fancy dashboard with graphs and gauges ready to copy-paste in their presentations and show to their friends in the phone). For this, the [Prometheus clients in different languages](https://prometheus.io/docs/instrumenting/clientlibs/ "Catalog of Prometheus client libraries") will be used to create end points with metrics that can be directly scrapped like any other service. 
