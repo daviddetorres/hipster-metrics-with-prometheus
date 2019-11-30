@@ -1,4 +1,4 @@
-# Hipster metrics with prometheus
+# How to monitor Hipster Shop app
 
 In this article we will introduce the basics of [Prometheus](https://prometheus.io/ "Prometheus") metrics and how to extract, visualize and use the data monitored through a practical example. We will use the [Hipster Shop demonstration of microservices](https://github.com/GoogleCloudPlatform/microservices-demo "Hipster shop") as a case of use, and for the infrastructure we will deploy our cluster on [minikube](https://kubernetes.io/es/docs/tasks/tools/install-minikube/ "Minikube"), the all-known training kubernetes tool.
 
@@ -42,13 +42,11 @@ Finally, Prometheus not only has the capacity to register the metrics that it ga
 
 
 # That sounds good, but how do I integrate it in my cluster?
-Prometheus can be deployed directly in a cluster. All that is needed is to set a deployment with the Prometheus image and a ConfigMap that will be used to pass the configuration file with the definition of the metrics and where to get them. Here are some examples of a simple deployment with the service and the ConfigMap.
-
-// Prometheus-manifest
+Prometheus can be deployed directly in a cluster. All that is needed is to set a deployment with the Prometheus image and a ConfigMap that will be used to pass the configuration file with the definition of the metrics and where to get them. 
 
 This would be the usual way to deploy Prometheus, but in this case we will introduce Prometheus Operator. But, what is Prometheus Operator and why is it better for Sam? 
 
-First of all, after its installation with helm it automatically comes with a set of basic out-of-the-box metrics that we all need in our clusters, like information about the node, the pods or the Kubernetes services. Also automatizes the creation of rbac and comes with an alert manager and a Grafana just ready to use with useful dashboards available in 1 click. 
+First of all, after its installation with helm it automatically comes with a set of basic out-of-the-box metrics that we all need in our clusters, like information about the node, the pods or the Kubernetes services. Also automatizes the creation of rbac and comes with an alert manager and a Grafana just ready to use with useful dashboards available in one click. 
 
 This all is enough to make Sam happy for not having to prepare and configure standard setups for her cluster, so let's get a Prometheus operator in our Hipster Shop cluster:
 
@@ -186,7 +184,7 @@ But also, there are other exporters that can help to detect and identify problem
 # Visualizing the data
 It seems that with these metrics being gathered we have an amazing way to select a specific metric, visualize what is happening, and make the forensics if something bad happens. But Sam is still not calmed. She knows that at 00:01 she will not be able to sleep and she will be in the screen selecting one metric after another just to check that everything goes as expected. Still not so useful when you want to know just with a quick look if something is wrong. 
 
-Here is when Grafana comes in the rescue. This close friend old Prometheus provide us with ready-to-use dashboards that Sam can check from the tablet or even by her phone. Also, creating new panels with our own custom metrics graphs and gauges is as easy as creating a promQL sentence and add it to the panel. 
+Here is when Grafana comes in the rescue. This close friend of Prometheus provide us with ready-to-use dashboards that Sam can check from the tablet or even by her phone. Also, creating new panels with our own custom metrics graphs and gauges is as easy as creating a promQL sentence and add it to the panel. 
 
 To access Grafana, we just have to redirect the port of the service (user: admin / pass: prom-operator): 
 
@@ -209,19 +207,118 @@ After adding the new panel, the panels can be moved and arrange visually until g
 
 
 # Alerting when something goes wrong
-At this point, Sam is quite better that in the beginning of the story, but now she is checking her phone every 5 minutes to see the Grafana dashboards that she just configured in teh cluster, not only because she likes the well-defined fancy-colored widgets over dark background, but just to get sure that everything goes on working as it should. 
+At this point, Sam is quite better that in the beginning of the story, but now she is checking her phone every 5 minutes to see the Grafana dashboards that she just configured in the cluster, not only because she likes the well-defined fancy-colored widgets over dark background, but just to get sure that everything goes on working as it should. 
 
-Fortunately for her (and for everyone in a similar position), Prometheus comes with an integrated way to alert another service that comes with the helm Prometheus Operator installation, the Alert Manager. 
+Fortunately for her (and for everyone in a similar position), Prometheus itself cannot send notifications when something happens, but comes with an integrated way to alert another service that comes with the helm Prometheus Operator installation, the Alert Manager. 
 
-// Actions and alert manager
+Sam, in order to notify someone when the node of the cluster is about to get stalled for reaching the limit of memory, CPU, disk available, etc. there are two things that need to be configured. The first one is a rule in Prometheus that will push the alert to the Alert Manager. 
 
+In a standard configuration of Prometheus, these rules are integrated either in the configuration file of Prometheus or in other specific files of rules. But, as happened in the case of the scraping endpoint, Prometheus Operator also defines CRDs for the rules, making them easier to write, maintain and deploy. We can list the Prometheus Rules that we have in our cluster like this: 
+
+```
+kubectl get prometheusrules -n monitoring
+```
+
+In the list we can see that there is already a set of rules that creates recorded metrics and even alerts. But in this case, Sam wants to cerate a new alert to notify herself when the average CPU of the node is over 50% for more than 10 minutes. To do this, we create a yaml file called 'monitoring-custom-rules.yaml' with the following content:
+
+```
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    app: prometheus-operator
+  name: monitoring-custom-alerts-node.rules
+  namespace: monitoring
+  resourceVersion: "4283"
+spec:
+  groups:
+  - name: monitoring-custom-alerts-node.rules
+    rules:
+    - alert: CPUOver50pctFor10m
+      annotations:
+        message: The CPU has been over 50pct for more than 10 minutes
+      expr: avg (100 * (1 - rate(node_cpu_seconds_total{mode = 'idle'}[5m]))) > 50
+      for: 10m
+      labels:
+        severity: critical
+```
+
+And apply the file to create a new Prometheus Rule: 
+```
+kubectl apply -f monitoring-custom-rules.yaml
+```
+
+We have done half of the configuration. Now we have to configure the Alert Manager to make it send an email when receiving critical alerts. 
+
+The Alert Manager uses a configuration based in filtering alerts and group them by labels, defining this way receivers for this groups. To explore the configuration, the alert Manager comes with an integrated front-end interface. To access it the port 9093 of the pod has to be exposed:
+
+```
+kubectl port-forward $(kubectl get pods --selector=app=alertmanager -n monitoring --output=jsonpath="{.items..metadata.name}") -n monitoring 9093
+```
+![Alert Manager Front-end](resources/alertmanager-frontend.png "Front-end of the Prometheus Alert Manager")
+
+The configuration of the Alert Manager is done through a secret in the namespace for monitoring, where the configuration data is passed in a base64 encoded string. To recover the configuration we can do it this way: 
+
+```
+echo $(kubectl get secrets --selector=app=prometheus-operator-alertmanager -n monitoring --output=jsonpath="{.items..data.alertmanager\.yaml}") | base64 -d
+```
+
+The result is the following: 
+
+```
+global:
+  resolve_timeout: 5m
+receivers:
+- name: "null"
+route:
+  group_by:
+  - job
+  group_interval: 5m
+  group_wait: 30s
+  receiver: "null"
+  repeat_interval: 12h
+  routes:
+  - match:
+      alertname: Watchdog
+    receiver: "null"
+```
+
+Now, all Sam has to do is modify the configuration file to define a receiver with her email and a route for the Alert Manager to send her the emails. In this case, she decided to get notified by all the critical alerts that happen in the node. 
+
+```
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: 'localhost:25'
+  smtp_from: 'alertmanager@thehipstershop.cloud'
+receivers:
+- name: "null"
+- name: "devopsteam.alerts"
+  email_configs:
+  - to: "devopsteam.alerts@thehipstershop.cloud"
+route:
+  group_by:
+  - job
+  group_interval: 5m
+  group_wait: 30s
+  receiver: "null"
+  repeat_interval: 12h
+  routes:
+  - match:
+      alertname: Watchdog
+    receiver: "null"
+  - match:
+      severity: critical
+    receiver: "devopsteam.alerts"
+```
+
+After getting ready the new configuration file, make the base64 string and apply again the modified secret to make the Alert Manager to update its configuration. 
 
 # That's a great start, what's next? 
 That night Prometheus fulfilled the mission for which it was created for (let the devops engineers sleep peacefully) and Sam wakes up in the morning with no notifications from the alerts that she configured. 
 
-The next days he can study how was the traffic evolution during that moments and the following days in order to dimension better the cluster and the scaling of the services for future high demand situations and prepare plan for optimize the costs of the cluster resources for the CTO. 
+The next days she can study how was the traffic evolution during that moments and the following days in order to dimension better the cluster and the scaling of the services for future high demand situations and prepare plan for optimize the costs of the cluster resources for the CTO. 
 
-Also, she wants to get ready for the Christmas campaign and whe will talk to the development team in order to instrument the application and get metrics from the different services. The first one that she is willing to monitor is the redis database. After finding an exporter for redis, they decide to change the yaml deployment file of the database to include in teh pod teh exporter as a sidecar and start to register data with a new ServiceMonitor.
+Also, she wants to get ready for the Christmas campaign and whe will talk to the development team in order to instrument the application and get metrics from the different services. The first one that she is willing to monitor is the redis database. After finding an exporter for redis, they decide to change the yaml deployment file of the database to include in the pod the container of the exporter as a sidecar and start to register data with a new ServiceMonitor.
 
 Another service that will get some metrics soon is the email server. Sam's team wants to monitor the activity of this service in order to be able to detect possible missuses of it to send massive spam. 
 
