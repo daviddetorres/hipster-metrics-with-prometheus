@@ -143,9 +143,9 @@ In the text just below the graphs we can find some interesting information about
 
 ![Prometheus node exporter CPU metric](resources/cpu-metric-detail.png "Detail of the node exporter CPU metric")
 
-As we can see, a metric can be defined by different values tagged as labels. In this case, we can see that the instance can give information about the seconds of each of the CPUs of the node (with the 'cpu' label) spent in different 'modes' ('idle', 'system', 'nice', 'iowait'..). 
+As we can see, a metric can be defined by different values tagged as labels. In this case, we can see that the instance can give information about the seconds of each of the CPUs of the node (with the 'cpu' label) spent in different 'modes' ('idle', 'system', 'nice', 'iowait'..). The more different combinations of labels that a metric can have, the higher the cardinality of the metric. This is a feature of the metrics that has to be taken into account in order to dimension the Prometheus instances, due to each of them can process a limited amount of data. 
 
-Let's first try to see the time used by each CPU. But to do this, we would have to subtract one value from the next one and divide it for the integration time in order to calculate the seconds per seconds used... But don't worry, because Sam just found out that the Prometheus query language (promQL) makes it all by himself. WE just have to write in the text box the following query to have the same graph, but with an integration interval of 5 minutes: 
+Let's first try to see the time used by each CPU. But don't worry, because Sam just found out that the Prometheus query language (promQL) makes it all by himself. We will do it step by step. We will start writing in the text box the following query to have the same graph, but with an integration interval of 5 minutes: 
 
 ```
 rate(node_cpu_seconds_total[5m])
@@ -173,16 +173,16 @@ That is almost perfect... but we can make it a percentage of the CPU utilization
 avg (100 * (1 - rate(node_cpu_seconds_total{mode = 'idle'}[5m])))
 ```
 
-As we can see in these examples, promQL is a powerful way to explore the data and look wor information filtering by labels, combining the metrics values and introducing formulas and making statistical operations. 
+As we can see in these examples, promQL is a powerful way to explore the data and look for information filtering by labels, combining the metrics values and introducing formulas and making statistical operations. 
 
 There are other metrics that can give us information about the performance of the node: 
 * node_network_receive_bytes_total and node_network_transmit_bytes_total: For the throughput of the connection
 * node_network_receive_errs_total and node_network_transmit_errs_total: For networking errors
 
-But also, there are other exporters that can help to detect and identify problems not only in the host machine, but in the cluster. We can find some interesting metrics, like 'kube_pod_container_status_restarts_total'. This metric gives information of the number of restarts that has suffered a pod, that can be caused by internal malfunction of the container, making it unhealthy or problems in the quotas that makes Kubernetes to kill pods.
+But also, there are other exporters that can help to detect and identify problems not only in the host machine, but in the cluster. We can find some interesting metrics, like 'kube_pod_container_status_restarts_total'. This metric gives information of the number of restarts that a pod has suffered. This can be caused by an internal malfunction of the container making it unhealthy, or problems in the quotas that make Kubernetes kill pods.
 
 # Visualizing the data
-It seems that with these metrics being gathered we have an amazing way to select a specific metric, visualize what is happening, and make the forensics if something bad happens. But Sam is still not calmed. She knows that at 00:01 she will not be able to sleep and she will be in the screen selecting one metric after another just to check that everything goes as expected. Still not so useful when you want to know just with a quick look if something is wrong. 
+It seems that gathering all these data we have an amazing way to select a specific metric, visualize what is happening, and make the forensics if something bad ever happens. But Sam is still not calmed. She knows that at 00:01 she will not be able to sleep and she will be in the screen selecting one metric after another and making promQL queries just to check that everything goes as expected. It is still not so convincing when you want to know just with a quick look if something goes wrong. 
 
 Here is when Grafana comes in the rescue. This close friend of Prometheus provide us with ready-to-use dashboards that Sam can check from the tablet or even by her phone. Also, creating new panels with our own custom metrics graphs and gauges is as easy as creating a promQL sentence and add it to the panel. 
 
@@ -192,28 +192,28 @@ To access Grafana, we just have to redirect the port of the service (user: admin
 kubectl port-forward $(kubectl get pods --selector=app=grafana -n monitoring --output=jsonpath="{.items..metadata.name}") -n monitoring 3000
 ```
 
-Prometheus Operator has some configuration for Grafana that make available a set of ready-to-use dachboards with the most important cases of use. In this case, Sam is lucky to find a dashboard with almost all the information that she was wanting to see from the node: 
+Prometheus Operator has some configurations for Grafana that make available a set of ready-to-use dachboards with the most important cases of use. In this case, Sam is lucky to find a dashboard with almost all the information that she was wanting to see from the node: 
 
 ![Node dashboard](resources/node-dashboard.png "Dashboard for the node metrics")
 
-Just adding a new panel to see the total usage of the CPU would be great. All Sam has to do is to create a new dashboard copying the node one and add new panel. To correctly configure the visualization she has to choose a correct kind of panel (there are many options depending on the kind of data and usage that we need), and the promQL sentence that we used before in the Prometheus front-end interface.
+Just adding a new panel to see the total usage of the CPU would be great. All that Sam has to do is to create a new dashboard copying the node one and add new panel. To correctly configure the visualization she has to choose a adequate kind of panel (there are many options depending on the kind of data and usage that we need), and the promQL sentence that we used before in the Prometheus front-end interface.
 
 ![Adding a new panel](resources/new-panel.png "Adding a new panel to the Grafana dashboard")
 
-After adding the new panel, the panels can be moved and arrange visually until getting the layout that she likes most.
+After adding the new panel, the panels can be moved and arranged visually until getting the layout that she likes most.
 
 ![Dashboard modified](resources/dashboard-modified.png "Dashboard for the node metrics with new panel")
 
-Finally, Sam also creates another dashboard with panels showing the state (1 for up, 0 for down) of the diferent services of the kubernetes cluster: the Api Server, Scheduler, Admission Controller and the Etcd database. This makes her easier to see the general state of the cluster and check that they are all up and running.   
+Finally, Sam also creates another dashboard with panels showing the state (1 for up, 0 for down) of the diferent services of the kubernetes cluster: the Api Server, Scheduler, Admission Controller and the Etcd database. This makes it easier for her to see the general state of the cluster and check that they are all up and running.   
 
 # Alerting when something goes wrong
-At this point, Sam is quite better that in the beginning of the story, but now she is checking her phone every 5 minutes to see the Grafana dashboards that she just configured in the cluster, not only because she likes the well-defined fancy-colored widgets over dark background, but just to get sure that everything goes on working as it should. 
+At this point, Sam is quite better that in the beginning of the story, but now she is checking her phone every 5 minutes to see the Grafana dashboards that she just configured in the cluster, not only because she likes the well-defined fancy-colored widgets over dark background, but just to be sure that everything goes on working as it should. 
 
-Fortunately for her (and for everyone in a similar position), Prometheus itself cannot send notifications when something happens, but comes with an integrated way to alert another service that comes with the helm Prometheus Operator installation, the Alert Manager. 
+Fortunately for her (and for everyone in a similar position), Prometheus itself cannot send notifications when something happens, but comes with an integrated way to alert another service that comes with the helm installation of Prometheus Operator: the Alert Manager. 
 
-Sam, in order to notify someone when the node of the cluster is about to get stalled for reaching the limit of memory, CPU, disk available, etc. there are two things that need to be configured. The first one is a rule in Prometheus that will push the alert to the Alert Manager. 
+Sam needs to configure just two things, in order to notify someone when the node of the cluster is about to get stalled for reaching the limit of memory, CPU, disk available, etc. The first one is a rule in Prometheus that will push the alert to the Alert Manager. 
 
-In a standard configuration of Prometheus, these rules are integrated either in the configuration file of Prometheus or in other specific files of rules. But, as happened in the case of the scraping endpoint, Prometheus Operator also defines CRDs for the rules, making them easier to write, maintain and deploy. We can list the Prometheus Rules that we have in our cluster like this: 
+In a standard configuration of Prometheus, these rules are integrated either in the configuration file of Prometheus or in other specific files of rules. But, as happened in the case of the scraping endpoints, Prometheus Operator also defines CRDs for the rules, making them easier to write, maintain and deploy. We can list the Prometheus Rules that we have in our cluster like this: 
 
 ```
 kubectl get prometheusrules -n monitoring
@@ -248,13 +248,14 @@ And apply the file to create a new Prometheus Rule:
 kubectl apply -f monitoring-custom-rules.yaml
 ```
 
-We have done half of the configuration. Now we have to configure the Alert Manager to make it send an email when receiving critical alerts. 
+We have done half of the configuration. The second step is configuring the Alert Manager to send an e-mail when it receives critical alerts from Prometheus. 
 
-The Alert Manager uses a configuration based in filtering alerts and group them by labels, defining this way receivers for this groups. To explore the configuration, the alert Manager comes with an integrated front-end interface. To access it the port 9093 of the pod has to be exposed:
+The Alert Manager uses a configuration based on filtering alerts and groups them by labels, and defining receivers for these groups. To explore the configuration, the Alert Manager comes with an integrated front-end interface. To access it the port 9093 of the pod has to be exposed:
 
 ```
 kubectl port-forward $(kubectl get pods --selector=app=alertmanager -n monitoring --output=jsonpath="{.items..metadata.name}") -n monitoring 9093
 ```
+
 ![Alert Manager Front-end](resources/alertmanager-frontend.png "Front-end of the Prometheus Alert Manager")
 
 The configuration of the Alert Manager is done through a secret in the namespace for monitoring, where the configuration data is passed in a base64 encoded string. To recover the configuration we can do it this way: 
@@ -283,7 +284,7 @@ route:
     receiver: "null"
 ```
 
-Now, all Sam has to do is modify the configuration file to define a receiver with her email and a route for the Alert Manager to send her the emails. In this case, she decided to get notified by all the critical alerts that happen in the node. 
+Now, what Sam has to do is to modify the configuration file to define a receiver with her e-mail and a route for the Alert Manager to send her the e-mails. In this case, she decided to get notified by all the critical alerts that happen in the node. 
 
 ```
 global:
@@ -314,15 +315,15 @@ route:
 After getting ready the new configuration file, make the base64 string and apply again the modified secret to make the Alert Manager to update its configuration. 
 
 # That's a great start, what's next? 
-That night Prometheus fulfilled the mission for which it was created for (let the devops engineers sleep peacefully) and Sam wakes up in the morning with no notifications from the alerts that she configured. 
+That night Prometheus fulfilled its mission: let the devops engineers sleep peacefully. Sam wakes up in the morning with no notifications from the alerts that she has configured and the Grafana dashboards show that everything is running correctly. 
 
 The next days she will study how was the traffic evolution during that moments and the following days in order to dimension better the cluster and the scaling of the services for future high demand situations and prepare plan for optimize the costs of the cluster resources for the CTO. As she was suspecting after reading the [Sysdig container usage report for 2019](https://sysdig.com/blog/sysdig-2019-container-usage-report/ "Sysdig container usage report for 2019") that says that more than 50% of the containers live less than 5 minutes, she will discover that most of the time the cluster resources are under 60% of utilization and that they can save money contracting smaller virtual machines that can be scaled up by demand, in stead of the over dimensioned ones that they are using regulary.
 
-But there are some parameters that are missing in the metrics that she is gathering right now. She would like to know the latency of the front-end, but with the current exporters that she has there is not an easy way to do it. Also, now she is getting the network connetion errors, but not the amount of pages not being served by HTTP errors. That is why Sam implements a new service to be able to reach the por for the [built-in metrics that the Nginx ingress controller](https://docs.gitlab.com/ee/user/project/integrations/prometheus_library/nginx_ingress.html "Metrics of Nginx ingress controller for Prometheus") that she has in the cluster has already activated. Then, all she will have to do is to create a new Service Monitor resource and Prometheus will automatically start to scrap these new exporter. 
+But there are some parameters that are missing in the metrics that she is gathering right now. She would like to know the latency of the front-end, but with the current exporters that she has there is not an easy way to do it. Also, now she is getting the network connection errors, but not the amount of pages that are not being served by HTTP errors. That is why Sam implements a new service to be able to reach the port for the [built-in metrics that the Nginx ingress controller](https://docs.gitlab.com/ee/user/project/integrations/prometheus_library/nginx_ingress.html "Metrics of Nginx ingress controller for Prometheus") that she has in the cluster. Then, she needs to create a new Service Monitor resource and Prometheus will automatically start to scrap this new exporter. 
 
-The aim to scrap the metrics of the ingress controller is that it can give Sam some valuable new information. The first one is the latency, as it has metrics for the HTTP connections and the networking time serving them. Making a division of these will give her the latency, one of the [golden signals](https://sysdig.com/blog/golden-signals-kubernetes/ "Monitoring golden signals in Kubernetes"). The second important metric that will give the ingress controller will be the number of web requests labelled by response status code. This will give Sam the chance to filter the number of error caused by the server (starting by 5XX) and the total, creating a new metric for the error rate (again another important golden signals)
+The aim to scrap the metrics of the ingress controller is getting some valuable new information. The first one is the latency, as it has metrics for the HTTP connections and the networking time for serving them. Making a division of these will give her the latency, one of the [golden signals](https://sysdig.com/blog/golden-signals-kubernetes/ "Monitoring golden signals in Kubernetes"). The second important metric that will give the ingress controller will be the number of web requests labelled by response status code. This will give Sam the chance to filter the number of errors caused by the server (starting by 5XX) and the total, creating a new metric for the error rate (again another important golden signals)
 
-Eventually, the Nginx ingress controller metrics also let her gather a third golden signal: the throughput (requests per second). Of course these new metrics will have their corresponding Prometheus Rules to be able to record them, a new pannel in Grafana with the network throughput, error rate and latency, and of course new alerting configuration both in the Prometheus Rule and in the Alert Manager. Following are the sentence that can be used as rules to create these new recorded metrics and use them in Grafana panels.
+Eventually, the Nginx ingress controller metrics also lets her gather a third golden signal: the throughput (requests per second). Of course these new metrics will have their corresponding Prometheus Rules to be able to record them, a new pannel in Grafana with the network throughput, error rate and latency, and of course new alerting configuration both in the Prometheus Rule and in the Alert Manager. The following promQL sentences can be used both as rules to create these new recorded metrics and in Grafana panels.
 
 ```
 # promQL sentence for throughput
@@ -335,14 +336,14 @@ sum(rate(nginx_ingress_controller_ingress_upstream_latency_seconds_sum{ingress=~
 sum(rate(nginx_ingress_controller_requests{status=~"5.*",ingress=~".*%{ci_environment_slug}.*"}[5m])) / sum(rate(nginx_ingress_controller_requests{ingress=~".*%{ci_environment_slug}.*"}[5m])) * 100
 ```
 
-Also, Sam wants to get ready for the Christmas campaign and whe will talk to the development team in order to instrument the application and get metrics from the different services. The first one that she is willing to monitor is the redis database. After finding an [exporter for Redis](https://github.com/oliver006/redis_exporter "Redis metrics exporter for Prometheus"), they decide to change the yaml deployment file of the database to [include in the pod the container of the exporter as a sidecar](https://github.com/oliver006/redis_exporter/blob/master/contrib/k8s-redis-and-exporter-deployment.yaml "Example to include the Redis exporter as sidecar in a pod") and start to register data with a new Service Monitor.
+Also, Sam wants to get ready for the Christmas campaign and she will talk to the development team in order to instrument the application and get metrics from the different services. The first one that she is willing to monitor is the redis database. After finding an [exporter for Redis](https://github.com/oliver006/redis_exporter "Redis metrics exporter for Prometheus"), they decide to change the yaml deployment file of the database to [include in the pod the container of the exporter as a sidecar](https://github.com/oliver006/redis_exporter/blob/master/contrib/k8s-redis-and-exporter-deployment.yaml "Example to include the Redis exporter as sidecar in a pod") and start to register data with a new Service Monitor.
 
-In this server she would also want to measure golden metrics (throughput, latency and error rate) as well as other metrics such as clients connected, memory usage, the total items of each database and the up time of the service. 
+In this redis server she would also want to measure golden metrics (throughput, latency and error rate) as well as other metrics such as clients connected, memory usage, the total items of each database and the up time of the service. 
 
-Another service that will get some metrics soon is the email server. In this case, more than focuse in performance, Sam's team wants to monitor the activity of this service in order to be able to detect possible missuses of it, for example, to send massive spam. To do this they'll use the [Prometheus Python client](https://github.com/prometheus/client_python "Prometheus Python client to instrument the email microservice") and gather information about the number of emails sent, the number of receivers, the number of diferent domains, the bytes sent in total and the bytes sent in attached files.
+The e-mail server is another service that soon will get some metrics. In this case, more than focusing in performance, Sam's team wants to monitor the activity of this service in order to be able to detect possible missuses of it, for example, to send massive spam. To do this they'll use the [Prometheus Python client](https://github.com/prometheus/client_python "Prometheus Python client to instrument the email microservice") and gather information about the number of sent e-mails, receivers, diferent domains, sent bytes in total and in attached files.
 
-The development team soon starts to use in an regular way Prometheus in the namespaces of the cluster dedicated for development and testing in order to improve response times of some services and discover some situations that were causing the sudden failure of the recommendation service as they saw that the number of created pods was increasing with no reason for scaling, along with some memory leaks in other services.
+The development team soon starts to use Prometheus in a regular way in the namespaces of the cluster dedicated for development and testing in order to improve response times of some services. Also they discover some situations that were causing the sudden failure of the recommendation service as they saw that the number of created pods was increasing with no reason for scaling, along with some memory leaks in other services.
 
-Unexpectedly, the marketing team happen to see one of the dashboards in her screen and they are interested in talking to the development team in order to see if it is possible to create metrics of the orders and sales generated by the different campaigns that they publish, in order to study how different campaigns succeed in different hours or profiles (also, they want a fancy dashboard with graphs and gauges ready to copy-paste in their presentations and show to their friends in the phone). For this, the [Prometheus clients in different languages](https://prometheus.io/docs/instrumenting/clientlibs/ "Catalog of Prometheus client libraries") will be used to create end points with metrics that can be directly scrapped like any other service. 
+Unexpectedly, the marketing team happens to see one of the dashboards in Sam's screen. Next week they will have a meeting with the development team in order to see if it is possible to create metrics of the orders and sales generated by the different campaigns that they publish. So they can study how different campaigns succeed in different hours or profiles (also, they want a fancy dashboard with graphs and gauges ready to copy-paste in their presentations and show to their friends in the phone). For this, the [Prometheus clients in different languages](https://prometheus.io/docs/instrumenting/clientlibs/ "Catalog of Prometheus client libraries") will be used to create end points with metrics that can be directly scrapped like any other service. 
 
 This is Sam. Sam monitors with Prometheus. Sam sleep peacefully at night. Sam optimize her cloud resources using metrics. Sam is smart. Be like Sam.
